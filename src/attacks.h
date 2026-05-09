@@ -11,7 +11,7 @@ extern Bitboard KingAttacks[SQUARE_NB];
 
 
 void init_attacks();
-bool attacks_self_test();
+
 
 
 

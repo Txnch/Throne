@@ -12,7 +12,7 @@ class MovePicker {
 public:
     struct MainOrderData {
         const int (*history)[64] = nullptr;
-        const int (*capture_history)[PIECE_NB] = nullptr;
+        const int (*capture_history)[16] = nullptr; 
         const int (*cont1)[64] = nullptr;
         const int (*cont2)[64] = nullptr;
         int quiet_check_bonus = 0;

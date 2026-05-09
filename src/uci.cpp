@@ -76,7 +76,7 @@ void uci_loop()
         if (line == "uci")
         {
             std::cout << "id name Throne\n";
-            std::cout << "id author one-man\n";
+            std::cout << "id author TunCH\n";
             std::cout << "option name Hash type spin default " << tt_hash_mb() << " min 1 max 65536\n";
             std::cout << "uciok\n" << std::flush;
         }

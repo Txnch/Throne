@@ -143,24 +143,14 @@ static Bitboard between_squares(Square a, Square b)
     return out & ~square_bb(a) & ~square_bb(b);
 }
 
-static inline void aux_xor_piece_keys(Piece p,
-                                      Square sq,
-                                      uint64_t& pawnKey,
-                                      std::array<uint64_t, COLOR_NB>& nonPawnKeys)
-{
-    if (p == NO_PIECE)
-        return;
+static inline void aux_xor_piece_keys(Piece p, uint64_t z, uint64_t& pawnKey, std::array<uint64_t, COLOR_NB>& nonPawnKeys) {
 
-    const uint64_t z = zobrist_piece[p][sq];
-    const PieceType pt = piece_type(p);
-
-    if (pt == PAWN)
-    {
+    if (piece_type(p) == PAWN) {
         pawnKey ^= z;
-        return;
     }
-
-    nonPawnKeys[piece_color(p)] ^= z;
+    else {
+        nonPawnKeys[piece_color(p)] ^= z;
+    }
 }
 
 static void compute_blockers_for_king(const Position& pos,
@@ -304,8 +294,9 @@ void Position::set_fen(const std::string& fen) {
     for (int s = 0; s < 64; ++s) {
         Piece p = board[s];
         if (p != NO_PIECE) {
-            hash_key ^= zobrist_piece[p][s];
-            aux_xor_piece_keys(p, Square(s), pawn_hash_key, non_pawn_hash_key);
+            uint64_t z = zobrist_piece[p][s];
+            hash_key ^= z;
+            aux_xor_piece_keys(p, z, pawn_hash_key, non_pawn_hash_key);
         }
     }
 
@@ -715,44 +706,28 @@ bool Position::make_move(Move m) {
         piece_bb[u.captured] &= ~square_bb(csq);
         occ[piece_color(u.captured)] &= ~square_bb(csq);
         occ_all &= ~square_bb(csq);
-        hash_key ^= zobrist_piece[u.captured][csq];
-        aux_xor_piece_keys(u.captured, csq, pawn_hash_key, non_pawn_hash_key);
+        uint64_t z_cap = zobrist_piece[u.captured][csq];
+        hash_key ^= z_cap;
+        aux_xor_piece_keys(u.captured, z_cap, pawn_hash_key, non_pawn_hash_key);
     }
 
     board[from] = NO_PIECE;
     piece_bb[p] &= ~square_bb(from);
     occ[piece_color(p)] &= ~square_bb(from);
     occ_all &= ~square_bb(from);
-    hash_key ^= zobrist_piece[p][from];
-    aux_xor_piece_keys(p, from, pawn_hash_key, non_pawn_hash_key);
+    uint64_t z_from = zobrist_piece[p][from];
+    hash_key ^= z_from;
+    aux_xor_piece_keys(p, z_from, pawn_hash_key, non_pawn_hash_key);
 
-    board[to] = p;
-    piece_bb[p] |= square_bb(to);
-    occ[piece_color(p)] |= square_bb(to);
+    Piece placed = is_promotion(m) ? make_piece(us, promotion_type(m)) : p;
+
+    board[to] = placed;
+    piece_bb[placed] |= square_bb(to);
+    occ[us] |= square_bb(to);
     occ_all |= square_bb(to);
-    hash_key ^= zobrist_piece[p][to];
-    aux_xor_piece_keys(p, to, pawn_hash_key, non_pawn_hash_key);
-
-    Piece placed = p;
-    if (is_promotion(m)) {
-        PieceType pt = promotion_type(m);
-        Piece newp = make_piece(us, pt);
-
-        piece_bb[p] &= ~square_bb(to);
-        occ[us] &= ~square_bb(to);
-        occ_all &= ~square_bb(to);
-        hash_key ^= zobrist_piece[p][to];
-        aux_xor_piece_keys(p, to, pawn_hash_key, non_pawn_hash_key);
-
-        board[to] = newp;
-        piece_bb[newp] |= square_bb(to);
-        occ[us] |= square_bb(to);
-        occ_all |= square_bb(to);
-        hash_key ^= zobrist_piece[newp][to];
-        aux_xor_piece_keys(newp, to, pawn_hash_key, non_pawn_hash_key);
-
-        placed = newp;
-    }
+    uint64_t z_to = zobrist_piece[placed][to];
+    hash_key ^= z_to;
+    aux_xor_piece_keys(placed, z_to, pawn_hash_key, non_pawn_hash_key);
 
     Square rook_from = SQ_NONE;
     Square rook_to = SQ_NONE;
@@ -774,15 +749,17 @@ bool Position::make_move(Move m) {
         piece_bb[rook] &= ~square_bb(rook_from);
         occ[piece_color(rook)] &= ~square_bb(rook_from);
         occ_all &= ~square_bb(rook_from);
-        hash_key ^= zobrist_piece[rook][rook_from];
-        aux_xor_piece_keys(rook, rook_from, pawn_hash_key, non_pawn_hash_key);
+        uint64_t z_rook_from = zobrist_piece[rook][rook_from];
+        hash_key ^= z_rook_from;
+        aux_xor_piece_keys(rook, z_rook_from, pawn_hash_key, non_pawn_hash_key);
 
         board[rook_to] = rook;
         piece_bb[rook] |= square_bb(rook_to);
         occ[piece_color(rook)] |= square_bb(rook_to);
         occ_all |= square_bb(rook_to);
-        hash_key ^= zobrist_piece[rook][rook_to];
-        aux_xor_piece_keys(rook, rook_to, pawn_hash_key, non_pawn_hash_key);
+        uint64_t z_rook_to = zobrist_piece[rook][rook_to];
+        hash_key ^= z_rook_to;
+        aux_xor_piece_keys(rook, z_rook_to, pawn_hash_key, non_pawn_hash_key);
     }
 
     nnue::DirtyPieces dp{};
@@ -942,3 +919,5 @@ void Position::undo_null_move() {
     halfmove_clock_state = u.halfmove_clock;
     refresh_check_info();
 }
+
+

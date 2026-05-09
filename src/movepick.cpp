@@ -121,14 +121,22 @@ bool movepick_see_ge(const Position& pos, Move m, int threshold) {
 MovePicker::MovePicker() = default;
 
 int MovePicker::score_main_move(const Position& pos, Move m, const MovePicker::MainOrderData& order_data) {
-    if (is_capture(m)) {
-        int score = 200000 + movepick_capture_mvv_lva(pos, m);
+    if (is_capture(m) || is_promotion(m)) { 
+        int score = 200000;
+        if (is_capture(m)) score += movepick_capture_mvv_lva(pos, m);
+        
         if (order_data.capture_history) {
             const Piece attacker = pos.piece_on(from_sq(m));
-            Piece victim = pos.piece_on(to_sq(m));
-            if (is_en_passant(m))
-                victim = make_piece(~pos.side_to_move(), PAWN);
-            if (attacker != NO_PIECE && victim != NO_PIECE)
+            Piece victim = NO_PIECE;
+            
+            if (is_capture(m)) {
+                victim = pos.piece_on(to_sq(m));
+                if (is_en_passant(m))
+                    victim = make_piece(~pos.side_to_move(), PAWN);
+            }
+            
+            
+            if (attacker != NO_PIECE)
                 score += order_data.capture_history[attacker][victim] / 16;
         }
         return score;
