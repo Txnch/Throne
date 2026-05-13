@@ -46,9 +46,9 @@ static int init_lmr_table = []() {
     for (int d = 1; d < 64; ++d) {
         for (int m = 1; m < 256; ++m) {
             double base = std::log(d) * std::log(m) / 2.25;
-            // N 
+            // N (Not Quiet)
             LMR_TABLE[0][d][m] = static_cast<int>((0.40 + base) * LMR_SCALE);
-            // Q 
+            // Q (Quiet)
             LMR_TABLE[1][d][m] = static_cast<int>((0.80 + base) * LMR_SCALE);
         }
     }
@@ -59,7 +59,6 @@ static Move killer_moves[2][MAX_PLY];
 static int  history_heuristic[64][64]; 
 static int  shallow_history[64][64];   
 inline constexpr int SHALLOW_DEPTH = 4; 
-
 static Move countermove[64][64];
 
 static int cont_history[2][PIECE_TYPE_NB][64][PIECE_TYPE_NB][64];
@@ -216,7 +215,6 @@ static bool has_insufficient_material(const Position& pos)
     if (pos.pieces(PAWN) || pos.pieces(ROOK) || pos.pieces(QUEEN))
         return false;
 
-
     const int minors = popcount((pos.pieces(WHITE) | pos.pieces(BLACK)) & (pos.pieces(KNIGHT) | pos.pieces(BISHOP)));
 
 
@@ -262,6 +260,7 @@ static inline int capture_history_score(const Position& pos, Move m)
 
 static inline void update_capture_history(Piece attacker, Piece victim, int delta)
 {
+
     if (attacker == NO_PIECE)
         return;
 
@@ -376,7 +375,7 @@ static inline void update_continuation_histories(const Position& pos, const Sear
 }
 
 template <NodeType NT>
-static int negamax(Position& pos, int depth, int alpha, int beta, int ply, SearchStack* ss);
+static int negamax(Position& pos, int depth, int alpha, int beta, int ply, SearchStack* ss, bool allow_nmp = true);
 
 static int score_root_move(Position& pos, Move m, Move prior_best_move)
 {
@@ -635,7 +634,7 @@ static int qsearch(Position& pos, int alpha, int beta, int ply, SearchStack* ss)
 
 
 template <NodeType NT>
-static int negamax(Position& pos, int depth, int alpha, int beta, int ply, SearchStack* ss)
+static int negamax(Position& pos, int depth, int alpha, int beta, int ply, SearchStack* ss, bool allow_nmp)
 {
     constexpr bool isPV = (NT == Root || NT == PV);
     constexpr bool isRoot = (NT == Root);
@@ -761,7 +760,8 @@ static int negamax(Position& pos, int depth, int alpha, int beta, int ply, Searc
 
         ss[ply].excluded_move = tt_move;
 
-        int singular_score = negamax<NonPV>(pos, (depth - 1) / 2, singular_beta - 1, singular_beta, ply, ss);
+
+        int singular_score = negamax<NonPV>(pos, (depth - 1) / 2, singular_beta - 1, singular_beta, ply, ss, false);
         ss[ply].excluded_move = 0;
 
         if (singular_score < singular_beta) {
@@ -790,9 +790,13 @@ static int negamax(Position& pos, int depth, int alpha, int beta, int ply, Searc
 
         // --- NMP ---
         bool prev_is_null = (ply > 0 && ss[ply - 1].current_move == 0);
-        if (!inChk && !prev_is_null && ss[ply].excluded_move == 0 && depth >= 4 && staticEval >= beta && staticEval < 10000 && has_non_pawn_material(pos, pos.side_to_move()))
+
+
+        if (allow_nmp && !inChk && !prev_is_null && ss[ply].excluded_move == 0 && depth >= 4 && staticEval >= beta && staticEval < 10000 && has_non_pawn_material(pos, pos.side_to_move()))
         {
-            int R = 3 + depth / 6;
+
+            int R = 3 + depth / 3 + std::min(2, (staticEval - beta) / 200);
+            R = std::min(R, depth); 
 
             ss[ply].current_move = 0;
             ss[ply].moved_piece = NO_PIECE;
@@ -804,7 +808,17 @@ static int negamax(Position& pos, int depth, int alpha, int beta, int ply, Searc
 
             if (null_score >= beta)
             {
-                return null_score >= MATE_SCORE - MAX_PLY ? beta : null_score;
+
+                if (depth >= 16) {
+
+                    int verified_score = negamax<NonPV>(pos, depth - R, beta - 1, beta, ply, ss, false);
+                    if (verified_score >= beta) {
+                        return null_score >= MATE_SCORE - MAX_PLY ? beta : null_score;
+                    }
+                }
+                else {
+                    return null_score >= MATE_SCORE - MAX_PLY ? beta : null_score;
+                }
             }
         }
 
@@ -887,28 +901,33 @@ static int negamax(Position& pos, int depth, int alpha, int beta, int ply, Searc
     Piece capture_victims[256];
     int  capture_count = 0;
 
+
+    bool skip_quiets = false;
+
     for (Move m = picker.next(false); m; m = picker.next(false))
     {
-        if (m == ss[ply].excluded_move)
-            continue;
+        if (m == ss[ply].excluded_move) continue;
 
         bool isQuiet = !is_capture(m) && !is_promotion(m);
+
+
+        if (skip_quiets && isQuiet) continue;
 
         Piece movedPiece = pos.piece_on(from_sq(m));
         Piece capturedPiece = captured_piece_for_move(pos, m);
 
         int hist_score = 0;
-        if (isQuiet) {
-            hist_score = quiet_history_score(pos, m, ply, ss, depth);
-        }
-        else {
-            hist_score = capture_history_score(pos, m);
-        }
+        if (isQuiet) hist_score = quiet_history_score(pos, m, ply, ss, depth);
+        else hist_score = capture_history_score(pos, m);
+
         ss[ply].hist_score = hist_score;
 
-        if (!inChk && isQuiet && depth <= 8 && std::abs(alpha) < MATE_SCORE - MAX_PLY) {
-            int lmp_threshold = 3 + depth * depth / 2;
+        
+        if (!inChk && isQuiet && depth <= 8 && std::abs(alpha) < MATE_SCORE - MAX_PLY && moveCount > 0) {
+            
+            int lmp_threshold = (3 + depth * depth) / (improving ? 1 : 2);
             if (moveCount >= lmp_threshold) {
+                skip_quiets = true; 
                 continue;
             }
         }
@@ -981,8 +1000,6 @@ static int negamax(Position& pos, int depth, int alpha, int beta, int ply, Searc
 
             int R = 0;
 
-
-            // LMR
             if (depth >= 3 && moveCount > (isPV ? 3 : 1) && !inChk && ext == 0)
             {
                 int d = std::min(depth, 63);
@@ -1121,6 +1138,7 @@ static int negamax(Position& pos, int depth, int alpha, int beta, int ply, Searc
 
     if (!stop_flag)
     {
+
         int bonus = depth * depth + (std::abs(ss[ply].hist_score) / 64);
         bonus = std::min(bonus, 2000); 
 

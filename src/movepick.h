@@ -4,7 +4,6 @@
 
 class Position;
 
-
 int movepick_capture_mvv_lva(const Position& pos, Move m);
 bool movepick_see_ge(const Position& pos, Move m, int threshold);
 
@@ -23,16 +22,16 @@ public:
     static int score_main_move(const Position& pos, Move m, const MainOrderData& order_data);
 
     void init_main(const Position& pos,
-                   Move tt_move,
-                   Move killer1,
-                   Move killer2,
-                   Move counter_move,
-                   const MainOrderData* order_data);
+        Move tt_move,
+        Move killer1,
+        Move killer2,
+        Move counter_move,
+        const MainOrderData* order_data);
 
 
     void init_qsearch(const Position& pos,
-                      bool in_check,
-                      Move tt_move);
+        bool in_check,
+        Move tt_move);
 
     Move next(bool skip_quiets = false);
 
@@ -53,17 +52,8 @@ private:
         ST_QS_MOVES,
     };
 
-    struct Bucket {
-        Move moves[MAX_MOVES]{};
-        int  scores[MAX_MOVES]{};
-        int  count = 0;
-        int  head = 0;
 
-        void reset();
-        void push(Move m, int s);
-        bool has_next() const;
-        Move pop_next(int& last_score_value, int fallback_score);
-    };
+    void select_best(int begin, int end);
 
     Stage stage = ST_DONE;
 
@@ -81,16 +71,14 @@ private:
     bool has_k2 = false;
     bool has_counter = false;
 
-    bool captures_generated = false;
-    bool quiets_generated = false;
-    bool qs_generated = false;
 
-    Bucket captures;
-    Bucket bad_captures;
-    Bucket quiets;
-    Bucket qs_moves;
+    Move moves[MAX_MOVES]{};
+    int  scores[MAX_MOVES]{};
 
-    int last_score_value = 0;
+
+    int cur = 0;
+    int goodCaptEnd = 0;
+    int captEnd = 0;
+    int quietEnd = 0;
+    int badCaptCur = 0;
 };
-
-
